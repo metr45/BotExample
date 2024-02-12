@@ -1,71 +1,94 @@
 python
-from telegram import ReplyKeyboardMarkup, KeyboardButton
+import random
+import time
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
-import threading
 
-# Константы для состояний диалога
-FIRST_BLOCK, SECOND_BLOCK = range(2)
+# Определение состояний (блоков)
+START, EVENT_1, EVENT_2, EVENT_3, MANAGER_CONTACTED, FOLLOW_UP = range(6)
 
-def start(update, context):
-    reply_keyboard = [['Событие 1', 'Событие 2', 'Событие 3']]
-    markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
-    update.message.reply_text(
-        'Выберите ваш подарок:',
-        reply_markup=markup
-    )
-    return FIRST_BLOCK
+# Клавиатура событий
+event_keyboard = ReplyKeyboardMarkup([["Событие 1"], ["Событие 2"], ["Событие 3"]], one_time_keyboard=True)
 
-def event_chosen(update, context):
-    # Обработка выбора события и переход к следующему блоку
-    if update.message.text == 'Событие 1':
-        context.user_data['event'] = 'Событие 1'
-    elif update.message.text == 'Событие 2':
-        context.user_data['event'] = 'Событие 2'
-    elif update.message.text == 'Событие 3':
-        context.user_data['event'] = 'Событие 3'
-    update.message.reply_text(
-        'Вы выбрали {}. Кликните на эту кнопку для продолжения'.format(context.user_data['event']),
-        reply_markup=ReplyKeyboardMarkup([[KeyboardButton('Далее')]], one_time_keyboard=True)
-    )
-    return SECOND_BLOCK
+# Функция для ответа на события
+def event(update, context):
+    event_text = update.message.text
 
-def next_block(update, context):
-    update.message.reply_text('Блок 2!')
+    if event_text == "Событие 1":
+        # Логика для события 1
+        reply_text = "Это событие 1. Действие: [действие]."
+        reply_photo = "URL_изображения"
+        next_state = EVENT_2
+    elif event_text == "Событие 2":
+        # Логика для события 2
+        reply_text = "Это событие 2. Действие: [действие]."
+        reply_photo = "URL_изображения"
+        next_state = EVENT_3
+    elif event_text == "Событие 3":
+        # Логика для события 3
+        reply_text = "Это событие 3. Действие: [действие]."
+        reply_photo = "URL_изображения"
+        next_state = MANAGER_CONTACTED
+    else:
+        # Логика для непредвиденного ответа
+        reply_text = "Неизвестное событие. Попробуйте еще раз."
+        reply_photo = None
+        next_state = START
+
+    update.message.reply_text(reply_text, reply_markup=ReplyKeyboardRemove())
+    
+    if reply_photo:
+        update.message.reply_photo(photo=reply_photo)
+
+    return next_state
+
+# Функция для передачи ответа о подключении менеджера
+def manager_contacted(update, context):
+    reply_text = "Менеджер был успешно подключен."
+    update.message.reply_text(reply_text)
     return ConversationHandler.END
 
-def connect_manager(update, context):
-    update.message.reply_text('Вы получите подключение к менеджеру')
+# Функция для добивки (в случае отсутствия ответа в течение 3 часов)
+def follow_up(update, context):
+    reply_text = "Добивка: Мы видим, что вы не отвечаете уже 3 часа. Пожалуйста, сообщите нам, если нужна помощь."
+    update.message.reply_text(reply_text)
+    return ConversationHandler.END
 
-def finish(update, context):
-    update.message.reply_text('Бот больше не будет отправлять сообщения.')
+# Функция для прекращения отправки сообщений
+def stop(update, context):
+    reply_text = "Вы прекратили получать сообщения от нашего бота."
+    update.message.reply_text(reply_text)
+    return ConversationHandler.END
 
-def timeout_callback(update, context):
-    update.message.reply_text('Прошло 3 часа бездействия')
+# Функция для обработки команды /start
+def start(update, context):
+    reply_text = "Привет! Я бот. Выберите одно из событий:"
+    update.message.reply_text(reply_text, reply_markup=event_keyboard)
+    return START
 
 def main():
-    updater = Updater('<YOUR BOT TOKEN>', use_context=True)
+    # Инициализация бота
+    updater = Updater("Ваш_токен_бота", use_context=True)
 
-    dispatcher = updater.dispatcher
+    # Инициализация диспетчера
+    dp = updater.dispatcher
 
+    # Создание и добавление ConversationHandler для обработки диалогов
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            FIRST_BLOCK: [MessageHandler(Filters.regex('^(Событие 1|Событие 2|Событие 3)$'), event_chosen)],
-            SECOND_BLOCK: [MessageHandler(Filters.text, next_block)]
+            START: [MessageHandler(Filters.regex('^(Событие 1|Событие 2|Событие 3)$'), event)],
+            EVENT_2: [MessageHandler(Filters.text, event)],
+            EVENT_3: [MessageHandler(Filters.regex('(не беспокоить)'), stop), MessageHandler(Filters.text, event)],
+            MANAGER_CONTACTED: [MessageHandler(Filters.text, manager_contacted)]
         },
-        fallbacks=[CommandHandler('stop', finish)]
+        fallbacks=[MessageHandler(Filters.text, follow_up)],
+        conversation_timeout=3*60*60  # 3 часа таймаута для добивки
     )
+    dp.add_handler(conv_handler)
 
-    dispatcher.add_handler(conv_handler)
-
-
-//Эот блок для добивки
-    # Создание таймера для отслеживания бездействия в 3 часа
-    timer = threading.Timer(3 * 60 * 60, timeout_callback, [None, None])
-    timer.start()
-
+    # Запуск бота
     updater.start_polling()
-
     updater.idle()
 
 if __name__ == '__main__':
