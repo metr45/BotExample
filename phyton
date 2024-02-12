@@ -1,0 +1,72 @@
+python
+from telegram import ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
+import threading
+
+# Константы для состояний диалога
+FIRST_BLOCK, SECOND_BLOCK = range(2)
+
+def start(update, context):
+    reply_keyboard = [['Событие 1', 'Событие 2', 'Событие 3']]
+    markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+    update.message.reply_text(
+        'Выберите ваш подарок:',
+        reply_markup=markup
+    )
+    return FIRST_BLOCK
+
+def event_chosen(update, context):
+    # Обработка выбора события и переход к следующему блоку
+    if update.message.text == 'Событие 1':
+        context.user_data['event'] = 'Событие 1'
+    elif update.message.text == 'Событие 2':
+        context.user_data['event'] = 'Событие 2'
+    elif update.message.text == 'Событие 3':
+        context.user_data['event'] = 'Событие 3'
+    update.message.reply_text(
+        'Вы выбрали {}. Кликните на эту кнопку для продолжения'.format(context.user_data['event']),
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton('Далее')]], one_time_keyboard=True)
+    )
+    return SECOND_BLOCK
+
+def next_block(update, context):
+    update.message.reply_text('Блок 2!')
+    return ConversationHandler.END
+
+def connect_manager(update, context):
+    update.message.reply_text('Вы получите подключение к менеджеру')
+
+def finish(update, context):
+    update.message.reply_text('Бот больше не будет отправлять сообщения.')
+
+def timeout_callback(update, context):
+    update.message.reply_text('Прошло 3 часа бездействия')
+
+def main():
+    updater = Updater('<YOUR BOT TOKEN>', use_context=True)
+
+    dispatcher = updater.dispatcher
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            FIRST_BLOCK: [MessageHandler(Filters.regex('^(Событие 1|Событие 2|Событие 3)$'), event_chosen)],
+            SECOND_BLOCK: [MessageHandler(Filters.text, next_block)]
+        },
+        fallbacks=[CommandHandler('stop', finish)]
+    )
+
+    dispatcher.add_handler(conv_handler)
+
+
+//Эот блок для добивки
+    # Создание таймера для отслеживания бездействия в 3 часа
+    timer = threading.Timer(3 * 60 * 60, timeout_callback, [None, None])
+    timer.start()
+
+    updater.start_polling()
+
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
