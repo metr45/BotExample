@@ -1,0 +1,63 @@
+const TelegramBot = require('node-telegram-bot-api');
+
+const token = 'YOUR_TELEGRAM_BOT_TOKEN';
+// Время в миллисекундах до вывода блока "добивка" (3 часа = 3 * 60 * 60 * 1000)
+const timeoutDuration = 3 * 60 * 60 * 1000;
+
+const bot = new TelegramBot(token, {polling: true});
+
+// Запуск обработчика событий
+bot.on('message', (msg) => {
+  const chatId = msg.chat.id;
+  const messageText = msg.text.toLowerCase();
+
+  // Первый блок событий
+  if (
+    messageText === 'событие 1' ||
+    messageText === 'событие 2' ||
+    messageText === 'событие 3'
+  ) {
+    // Отправка изображения в виде подарка
+    bot.sendPhoto(chatId, 'PATH_TO_GIFT_IMAGE');
+    // Отправка сообщения с действием в виде клика
+    bot.sendMessage(
+      chatId,
+      'Кликните, чтобы продолжить',
+      {
+        reply_markup: {
+          inline_keyboard: [[
+            {text: 'Действие', callback_data: 'next_block'},
+          ]]
+        }
+      }
+    );
+  }
+
+  // Второй блок событий
+  if (messageText === 'абсолютно любое событие') {
+    bot.sendMessage(chatId, 'Ответ о подключении менеджера');
+  }
+
+  // Третий блок событий
+  if (messageText === 'не беспокоить') {
+    bot.sendMessage(chatId, 'Уведомления остановлены');
+    bot.stopPolling();
+    return; // Завершение выполнения функции
+  }
+
+  // Блок "добивка" при отсутствии ответа в течение 3 часов
+  setTimeout(() => {
+    bot.sendMessage(chatId, 'Блок "добивка"');
+  }, timeoutDuration);
+});
+
+// Обработка callback-запросов при клике на действие
+bot.on('callback_query', (query) => {
+  const chatId = query.message.chat.id;
+  const messageText = query.message.text;
+
+  if (query.data === 'next_block') {
+    // Отправка следующего блока событий
+    bot.sendMessage(chatId, 'Следующий блок');
+  }
+});
