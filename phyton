@@ -1,95 +1,74 @@
-python
-import random
-import time
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
+import asyncio
+from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram import Bot, Dispatcher, types, executor
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
 
-# Определение состояний (блоков)
-START, EVENT_1, EVENT_2, EVENT_3, MANAGER_CONTACTED, FOLLOW_UP = range(6)
+waiting = False
+isphoto = False
+run = True
+PHOTO = types.InputFile("photo.jpeg")
+ANSWER_TEXT = "Ваш подарок 🎁 действует только 24 часа. Только сегодня есть хорошая возможность максимально сэкономить 🔥. Пришлите в ответ на данное сообщение фото, оно Вас ни к чему не обязывает, как только пришлёте - в этот самый момент я рассчитаю стоимость и активирую Ваш подарок, а все вопросы обсудим перед покупкой 👌."
+ANSWER2_TEXT = "Наши портреты:\n🔥 из 100% хлопка\n🔥25 лет гарантии от выцветания и провисания\n🔥Ручная отрисовка художником\n\nВаш бонус сгорит ⏳ через 21 час, не упустите шанс им воспользоваться\n Вам нужна помощь с выбором фото?"
+ANSWER3_TEXT = "Сейчас подключится Мила и поможет Вам"
 
-# Клавиатура событий
-event_keyboard = ReplyKeyboardMarkup([["Событие 1"], ["Событие 2"], ["Событие 3"]], one_time_keyboard=True)
+bot_token = 'TOKEN'
+bot = Bot(token=bot_token)
+dp = Dispatcher(bot, storage=MemoryStorage())
+dp.middleware.setup(LoggingMiddleware())
 
-# Функция для ответа на события
-def event(update, context):
-    event_text = update.message.text
 
-    if event_text == "Событие 1":
-        # Логика для события 1
-        reply_text = "Это событие 1. Действие: [действие]."
-        reply_photo = "URL_изображения"
-        next_state = EVENT_2
-    elif event_text == "Событие 2":
-        # Логика для события 2
-        reply_text = "Это событие 2. Действие: [действие]."
-        reply_photo = "URL_изображения"
-        next_state = EVENT_3
-    elif event_text == "Событие 3":
-        # Логика для события 3
-        reply_text = "Это событие 3. Действие: [действие]."
-        reply_photo = "URL_изображения"
-        next_state = MANAGER_CONTACTED
-    else:
-        # Логика для непредвиденного ответа
-        reply_text = "Неизвестное событие. Попробуйте еще раз."
-        reply_photo = None
-        next_state = START
+class Form(StatesGroup):
+    photo = State()
 
-    update.message.reply_text(reply_text, reply_markup=ReplyKeyboardRemove())
-    
-    if reply_photo:
-        update.message.reply_photo(photo=reply_photo)
+@dp.message_handler(state=Form.photo)
+@dp.message_handler(content_types=types.ContentType.PHOTO, state=None)
+async def process_name(message: types.Message, state: FSMContext):
+    global isphoto
+    async with state.proxy() as data:
+        if waiting and not isphoto:
+            isphoto = True
+            await message.answer(ANSWER3_TEXT)
 
-    return next_state
+async def wait(chat_id, timeToWait, text, message_id):
+    global isphoto
+    await asyncio.sleep(timeToWait)
+    if text and not isphoto and run:
+        await bot.send_message(chat_id, text)
+    elif not text and isphoto:
+        try:
+            await bot.delete_message(chat_id, message_id)
+            isphoto = False
+        except:
+            pass
 
-# Функция для передачи ответа о подключении менеджера
-def manager_contacted(update, context):
-    reply_text = "Менеджер был успешно подключен."
-    update.message.reply_text(reply_text)
-    return ConversationHandler.END
 
-# Функция для добивки (в случае отсутствия ответа в течение 3 часов)
-def follow_up(update, context):
-    reply_text = "Добивка: Мы видим, что вы не отвечаете уже 3 часа. Пожалуйста, сообщите нам, если нужна помощь."
-    update.message.reply_text(reply_text)
-    return ConversationHandler.END
+@dp.callback_query_handler(text='off') 
+async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
+    global run
+    if query.data == "off":
+        run = False
+        await bot.delete_message(mes.chat.id, mes.message_id)
 
-# Функция для прекращения отправки сообщений
-def stop(update, context):
-    reply_text = "Вы прекратили получать сообщения от нашего бота."
-    update.message.reply_text(reply_text)
-    return ConversationHandler.END
+@dp.message_handler(commands=["start"])
+async def start(message: types.Message):
+    global keyboard_markup, mes
+    keyboard_markup = types.InlineKeyboardMarkup()
+    text_and_data = (("Ваш подарок 🎁  - 1!", 'accept'), ("Ваш подарок 🎁  - 2!", 'accept'), ("Ваш подарок 🎁  - 3!", 'accept'),(("Не беспокоить", 'off')))
+    row_btns = [types.InlineKeyboardButton(text, callback_data=data) for text, data in text_and_data]
+    for item in row_btns:
+        keyboard_markup.row(item)
+    mes = await message.answer_photo(PHOTO, reply_markup=keyboard_markup)
+    asyncio.create_task(wait(message.chat.id, 10800, ANSWER2_TEXT, mes.message_id))
+    asyncio.create_task(wait(message.chat.id, 86400, None, mes.message_id))
 
-# Функция для обработки команды /start
-def start(update, context):
-    reply_text = "Привет! Я бот. Выберите одно из событий:"
-    update.message.reply_text(reply_text, reply_markup=event_keyboard)
-    return START
+@dp.callback_query_handler(text='accept') 
+async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
+    global waiting
+    if query.data == "accept":
+        await bot.send_message(query.from_user.id, ANSWER_TEXT)
+        waiting = True
 
-def main():
-    # Инициализация бота
-    updater = Updater("Ваш_токен_бота", use_context=True)
-
-    # Инициализация диспетчера
-    dp = updater.dispatcher
-
-    # Создание и добавление ConversationHandler для обработки диалогов
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            START: [MessageHandler(Filters.regex('^(Событие 1|Событие 2|Событие 3)$'), event)],
-            EVENT_2: [MessageHandler(Filters.text, event)],
-            EVENT_3: [MessageHandler(Filters.regex('(не беспокоить)'), stop), MessageHandler(Filters.text, event)],
-            MANAGER_CONTACTED: [MessageHandler(Filters.text, manager_contacted)]
-        },
-        fallbacks=[MessageHandler(Filters.text, follow_up)],
-        conversation_timeout=3*60*60  # 3 часа таймаута для добивки
-    )
-    dp.add_handler(conv_handler)
-
-    # Запуск бота
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True, fast=True, relax=0, timeout=0)
